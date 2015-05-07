@@ -83,7 +83,9 @@ define([
         eyeOffset : 5,
         scaleByDistance : 6,
         pixelOffsetScaleByDistance : 7,
-        ownerSize : 8
+        ownerSize : 8,
+        offsetPositionHigh : 9,
+        offsetPositionLow : 10
     };
 
     /**
@@ -611,6 +613,16 @@ define([
             componentsPerAttribute : 2,
             componentDatatype : ComponentDatatype.FLOAT,
             usage : buffersUsage[OWNER_SIZE_INDEX]
+        }, {
+            index : attributeLocations.offsetPositionHigh,
+            componentsPerAttribute : 3,
+            componentDatatype : ComponentDatatype.FLOAT,
+            usage : buffersUsage[POSITION_INDEX]
+        }, {
+            index : attributeLocations.offsetPositionLow,
+            componentsPerAttribute : 3,
+            componentDatatype : ComponentDatatype.FLOAT,
+            usage : buffersUsage[POSITION_INDEX]
         }], 4 * numberOfBillboards); // 4 vertices per billboard
     }
 
@@ -623,7 +635,7 @@ define([
 
     var writePositionScratch = new EncodedCartesian3();
 
-    function writePositionScaleAndRotation(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard) {
+    function writePositionScaleAndRotation(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard) {
         var i = billboard._index * 4;
         var position = billboard._getActualPosition();
 
@@ -655,6 +667,27 @@ define([
         positionLowWriter(i + 1, low.x, low.y, low.z, rotation);
         positionLowWriter(i + 2, low.x, low.y, low.z, rotation);
         positionLowWriter(i + 3, low.x, low.y, low.z, rotation);
+
+        var ellipsoid = frameState.mapProjection.ellipsoid;
+        var offsetPositionCart = ellipsoid.cartesianToCartographic(position);
+        offsetPositionCart.height += 10.0;
+        var offsetPosition = ellipsoid.cartographicToCartesian(offsetPositionCart);
+
+        EncodedCartesian3.fromCartesian(offsetPosition, writePositionScratch);
+
+        var offsetPositionHighWriter = vafWriters[attributeLocations.offsetPositionHigh];
+        high = writePositionScratch.high;
+        offsetPositionHighWriter(i + 0, high.x, high.y, high.z);
+        offsetPositionHighWriter(i + 1, high.x, high.y, high.z);
+        offsetPositionHighWriter(i + 2, high.x, high.y, high.z);
+        offsetPositionHighWriter(i + 3, high.x, high.y, high.z);
+
+        var offsetPositionLowWriter = vafWriters[attributeLocations.offsetPositionLow];
+        low = writePositionScratch.low;
+        offsetPositionLowWriter(i + 0, low.x, low.y, low.z);
+        offsetPositionLowWriter(i + 1, low.x, low.y, low.z);
+        offsetPositionLowWriter(i + 2, low.x, low.y, low.z);
+        offsetPositionLowWriter(i + 3, low.x, low.y, low.z);
     }
 
     var scratchCartesian2 = new Cartesian2();
@@ -675,7 +708,7 @@ define([
     var UPPER_RIGHT = 3.0;
     var UPPER_LEFT = 1.0;
 
-    function writeCompressedAttrib0(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard) {
+    function writeCompressedAttrib0(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard) {
         var i = billboard._index * 4;
 
         var pixelOffset = billboard.pixelOffset;
@@ -755,7 +788,7 @@ define([
         writer(i + 3, compressed0 + UPPER_LEFT, compressed1, compressed2, compressedTexCoordsUL);
     }
 
-    function writeCompressedAttrib1(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard) {
+    function writeCompressedAttrib1(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard) {
         var i = billboard._index * 4;
 
         var alignedAxis = billboard.alignedAxis;
@@ -822,7 +855,7 @@ define([
         writer(i + 3, compressed0, compressed1, near, far);
     }
 
-    function writeCompressedAttrib2(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard) {
+    function writeCompressedAttrib2(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard) {
         var i = billboard._index * 4;
 
         var color = billboard.color;
@@ -865,7 +898,7 @@ define([
         writer(i + 3, compressed0, compressed1, compressed2, imageHeight);
     }
 
-    function writeEyeOffset(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard) {
+    function writeEyeOffset(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard) {
         var i = billboard._index * 4;
         var eyeOffset = billboard.eyeOffset;
         billboardCollection._maxEyeOffset = Math.max(billboardCollection._maxEyeOffset, Math.abs(eyeOffset.x), Math.abs(eyeOffset.y), Math.abs(eyeOffset.z));
@@ -877,7 +910,7 @@ define([
         writer(i + 3, eyeOffset.x, eyeOffset.y, eyeOffset.z);
     }
 
-    function writeScaleByDistance(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard) {
+    function writeScaleByDistance(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard) {
         var i = billboard._index * 4;
         var writer = vafWriters[attributeLocations.scaleByDistance];
         var near = 0.0;
@@ -905,7 +938,7 @@ define([
         writer(i + 3, near, nearValue, far, farValue);
     }
 
-    function writePixelOffsetScaleByDistance(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard) {
+    function writePixelOffsetScaleByDistance(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard) {
         var i = billboard._index * 4;
         var writer = vafWriters[attributeLocations.pixelOffsetScaleByDistance];
         var near = 0.0;
@@ -933,7 +966,7 @@ define([
         writer(i + 3, near, nearValue, far, farValue);
     }
 
-    function writeOwnerSize(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard) {
+    function writeOwnerSize(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard) {
         var i = billboard._index * 4;
         var size = billboard._ownerSize;
 
@@ -944,15 +977,15 @@ define([
         writer(i + 3, size.x, size.y);
     }
 
-    function writeBillboard(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard) {
-        writePositionScaleAndRotation(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard);
-        writeCompressedAttrib0(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard);
-        writeCompressedAttrib1(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard);
-        writeCompressedAttrib2(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard);
-        writeEyeOffset(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard);
-        writeScaleByDistance(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard);
-        writePixelOffsetScaleByDistance(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard);
-        writeOwnerSize(billboardCollection, context, textureAtlasCoordinates, vafWriters, billboard);
+    function writeBillboard(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard) {
+        writePositionScaleAndRotation(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard);
+        writeCompressedAttrib0(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard);
+        writeCompressedAttrib1(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard);
+        writeCompressedAttrib2(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard);
+        writeEyeOffset(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard);
+        writeScaleByDistance(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard);
+        writePixelOffsetScaleByDistance(billboardCollection, frameState, context, textureAtlasCoordinates, vafWriters, billboard);
+        writeOwnerSize(billboardCollection, context, frameState, textureAtlasCoordinates, vafWriters, billboard);
     }
 
     function recomputeActualPositions(billboardCollection, billboards, length, frameState, modelMatrix, recomputeBoundingVolume) {
@@ -1113,7 +1146,7 @@ define([
                 for (var i = 0; i < billboardsLength; ++i) {
                     var billboard = this._billboards[i];
                     billboard._dirty = false; // In case it needed an update.
-                    writeBillboard(this, context, textureAtlasCoordinates, vafWriters, billboard);
+                    writeBillboard(this, context, frameState, textureAtlasCoordinates, vafWriters, billboard);
                 }
 
                 // Different billboard collections share the same index buffer.
@@ -1172,7 +1205,7 @@ define([
                         b._dirty = false;
 
                         for ( var n = 0; n < numWriters; ++n) {
-                            writers[n](this, context, textureAtlasCoordinates, vafWriters, b);
+                            writers[n](this, context, frameState, textureAtlasCoordinates, vafWriters, b);
                         }
                     }
                     this._vaf.commit(getIndexBuffer(context));
@@ -1182,7 +1215,7 @@ define([
                         bb._dirty = false;
 
                         for ( var o = 0; o < numWriters; ++o) {
-                            writers[o](this, context, textureAtlasCoordinates, vafWriters, bb);
+                            writers[o](this, context, frameState, textureAtlasCoordinates, vafWriters, bb);
                         }
                         this._vaf.subCommit(bb._index * 4, 4);
                     }
