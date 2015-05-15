@@ -6,6 +6,7 @@ define([
         '../../Core/defined',
         '../../Core/defineProperties',
         '../../Core/DeveloperError',
+        '../../Core/Geocode',
         '../../Core/jsonp',
         '../../Core/Matrix4',
         '../../Core/Rectangle',
@@ -19,6 +20,7 @@ define([
         defined,
         defineProperties,
         DeveloperError,
+        Geocode,
         jsonp,
         Matrix4,
         Rectangle,
@@ -51,17 +53,13 @@ define([
         }
         //>>includeEnd('debug');
 
-        this._url = defaultValue(options.url, '//dev.virtualearth.net/');
-        if (this._url.length > 0 && this._url[this._url.length - 1] !== '/') {
-            this._url += '/';
-        }
+        var geocoder = new Geocode(options);
+        this._geocoder = geocoder;
 
-        this._key = BingMapsApi.getKey(options.key);
         this._scene = options.scene;
         this._flightDuration = defaultValue(options.flightDuration, 1.5);
         this._searchText = '';
         this._isSearchInProgress = false;
-        this._geocodeInProgress = undefined;
 
         var that = this;
         this._searchCommand = createCommand(function() {
@@ -144,7 +142,7 @@ define([
          */
         url : {
             get : function() {
-                return this._url;
+                return this._geocoder.url;
             }
         },
 
@@ -156,7 +154,7 @@ define([
          */
         key : {
             get : function() {
-                return this._key;
+                return this._geocoder.key;
             }
         },
 
@@ -213,60 +211,28 @@ define([
         }
         viewModel._isSearchInProgress = true;
 
-        var promise = jsonp(viewModel._url + 'REST/v1/Locations', {
-            parameters : {
-                query : query,
-                key : viewModel._key
-
-            },
-            callbackParameterName : 'jsonp'
-        });
-
-        var geocodeInProgress = viewModel._geocodeInProgress = when(promise, function(result) {
-            if (geocodeInProgress.cancel) {
-                return;
-            }
+        viewModel._geocoder.geocode(query).then(function(result) {
             viewModel._isSearchInProgress = false;
-
-            if (result.resourceSets.length === 0) {
+            if (!defined(result)) {
                 viewModel.searchText = viewModel._searchText + ' (not found)';
-                return;
+            } else {
+                viewModel._searchText = result.name;
+                var rectangle = result.rectangle;
+                var camera = viewModel._scene.camera;
+                var position = camera.getRectangleCameraCoordinates(rectangle);
+                if (!defined(position)) {
+                    // This can happen during a scene mode transition.
+                    return;
+                }
+
+                viewModel._scene.camera.flyTo({
+                    destination : position,
+                    duration : viewModel._flightDuration,
+                    endTransform : Matrix4.IDENTITY,
+                    convert : false
+                });
             }
-
-            var resourceSet = result.resourceSets[0];
-            if (resourceSet.resources.length === 0) {
-                viewModel.searchText = viewModel._searchText + ' (not found)';
-                return;
-            }
-
-            var resource = resourceSet.resources[0];
-
-            viewModel._searchText = resource.name;
-            var bbox = resource.bbox;
-            var south = bbox[0];
-            var west = bbox[1];
-            var north = bbox[2];
-            var east = bbox[3];
-            var rectangle = Rectangle.fromDegrees(west, south, east, north);
-
-            var camera = viewModel._scene.camera;
-            var position = camera.getRectangleCameraCoordinates(rectangle);
-            if (!defined(position)) {
-                // This can happen during a scene mode transition.
-                return;
-            }
-
-            viewModel._scene.camera.flyTo({
-                destination : position,
-                duration : viewModel._flightDuration,
-                endTransform : Matrix4.IDENTITY,
-                convert : false
-            });
-        }, function() {
-            if (geocodeInProgress.cancel) {
-                return;
-            }
-
+        }).otherwise(function(){
             viewModel._isSearchInProgress = false;
             viewModel.searchText = viewModel._searchText + ' (error)';
         });
@@ -274,10 +240,7 @@ define([
 
     function cancelGeocode(viewModel) {
         viewModel._isSearchInProgress = false;
-        if (defined(viewModel._geocodeInProgress)) {
-            viewModel._geocodeInProgress.cancel = true;
-            viewModel._geocodeInProgress = undefined;
-        }
+        viewModel.geocoder.cancelGeocode();
     }
 
     return GeocoderViewModel;
